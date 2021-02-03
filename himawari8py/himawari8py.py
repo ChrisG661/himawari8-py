@@ -12,9 +12,10 @@ import multiprocessing.dummy
 from PIL import Image
 from tqdm import tqdm
 
+IR_PREFIX = "FULL_24h"
 IMAGE = "D531106"
 HIMAWARI = "himawari8-dl.nict.go.jp"
-BASE_URL = f"https://{HIMAWARI}/himawari8/img/{IMAGE}"
+BASE_URL = f"https://{HIMAWARI}/himawari8/img"
 
 
 def latestdate(retries=10):
@@ -29,7 +30,7 @@ def latestdate(retries=10):
     session = requests.Session()
     for _ in range(retries):
         try:
-            response = session.get(f"{BASE_URL}/latest.json")
+            response = session.get(f"{BASE_URL}/{IMAGE}/latest.json")
             if response.status_code != 200:
                 continue
             date = datetime.datetime.strptime(
@@ -42,20 +43,21 @@ def latestdate(retries=10):
     raise Exception("Failed to connect to server: Connection timed out.")
 
 
-def get_tile(x, y, level, date, retries=10):
+def get_tile(x, y, level, date, band = None, retries=10):
     """
     Parameters
         - x: horizontal position of tile
         - y: vertical position of tile
+        - level: Tile grid size: 1, 2, 4, 8, 16, 20
         - date: Image date in GMT/UTC
-        - level: 
+        - band: Observation band: 1 - 16, default RGB
         - retries: Number of retries on requests 
 
     Return: 
         Tile of image taken from planet Earth of the Japanese satellite Himawari 8
     """
 
-    url = format_url(x, y, level, date)
+    url = format_url(x, y, level, date, band)
     session = requests.Session()
     for _ in range(retries):
         try:
@@ -70,10 +72,10 @@ def get_tile(x, y, level, date, retries=10):
     raise Exception(f"Failed to connect to server: Response {response.status_code}")
 
 
-def format_url(x, y, level, date):
+def format_url(x, y, level, date, band = None):
     """
     Parameters
-        - level: Zoom level of image or tile multiplier: 1, 2, 4, 8, 16, 20
+        - level: Tile grid size: 1, 2, 4, 8, 16, 20
         - date: Date of tile
         - x: horizontal position of tile
         - v: vertical position of tile
@@ -81,21 +83,22 @@ def format_url(x, y, level, date):
     Return:
         URL string of a tile 
     """
-
-    return f"""{BASE_URL}/{level}d/550/{date.strftime("%Y/%m/%d/%H%M%S")}_{x}_{y}.png"""
+    band = IMAGE if band == None or 'RGB' else f"{IR_PREFIX}/B{str(band).zfill(2)}"
+    return f"""{BASE_URL}/{band}/{level}d/550/{date.strftime("%Y/%m/%d/%H%M%S")}_{x}_{y}.png"""
 
 
 def __get_tile_thread(args):
     return get_tile(*args)
 
 
-def get_image(date=None, scale=550, level=4, retries=10, multithread=True, nthread=None,
+def get_image(date=None, scale=550, level=4, band = "RGB", retries=10, multithread=True, nthread=None,
               save_img=False, img_path="", img_name="himawari.png", show_progress=False):
     """
     Parameters
         - date: Image date in GMT/UTC
         - scale: Resolution of each tile in pixel
-        - level: Zoom level of image or Tile multiplier: 1, 2, 4, 8, 16, 20
+        - level: Tile grid size: 1, 2, 4, 8, 16, 20. Max 10 for IR
+        - band: Observation band: 1 - 16, default RGB
         - retries: Number of retries on requests
         - multithread: Enable tile download multithreading
         - nthread: Number of thread to allocate
@@ -112,22 +115,27 @@ def get_image(date=None, scale=550, level=4, retries=10, multithread=True, nthre
 
     path = os.path.join(img_path, img_name)
     imgsize = (scale * level, scale * level)
-    image = Image.new("RGB", imgsize)
+    if band == "RGB":
+        mode = "RGB" #Full color
+    elif isinstance(band, int):
+        mode = "LA" #IR
+    image = Image.new(mode, imgsize)
 
     if multithread:
         pool = multiprocessing.dummy.Pool(
             level * level if nthread is None else nthread)
         result = list(tqdm(
             pool.imap_unordered(__get_tile_thread,
-                                itertools.product(range(level), range(level), (level,), (date,))),
+                                itertools.product(range(level), range(level), (level,), (date,), (band,), (retries,))),
             total=level*level, unit="tile", desc="Downloading tiles ", disable=not show_progress))
         pool.close()
         pool.join()
 
     elif not multithread:
         result = list()
-        for x, y, d, l, r in itertools.product(range(level), range(level), (date,), (level,), (retries,)):
-            result.append(get_tile(x, y, d, l, r))
+        for x, y, l, d, b, r in tqdm(itertools.product(range(level), range(level), (level,), (date,), (band,), (retries,)),
+                                     total=level*level, unit="tile", desc="Downloading tiles ", disable=not show_progress):
+            result.append(get_tile(x, y, l, d, b, r))
 
     for (x, y, tile) in tqdm(iterable=result, unit="tile", desc="Stitching tiles   ", disable=not show_progress):
         box = tuple(n * scale for n in (x, y))
@@ -140,7 +148,7 @@ def get_image(date=None, scale=550, level=4, retries=10, multithread=True, nthre
 
 
 def get_images(start, finish, save_img=False, img_path="", prefix="himawari8", img_name="{prefix}_{date}.png",
-               show_progress=False, scale=550, level=4, retries=10, multithread=True, nthread=None):
+               show_progress=False, scale=550, level=4, band="RGB", retries=10, multithread=True, nthread=None):
     """
     Parameters
         - start: Start date in GMT/UTC
@@ -151,7 +159,8 @@ def get_images(start, finish, save_img=False, img_path="", prefix="himawari8", i
         - img_name: Name of the image if it is saved
         - show_progress: Show progress bar
         - scale: Resolution of each tile in pixel
-        - level: Zoom level of image or Tile multiplier: 1, 2, 4, 8, 16, 20
+        - level: Tile grid size: 1, 2, 4, 8, 16, 20
+        - band: Observation band: 1 - 16, default RGB
         - retries: Number of retries on requests
         - multithread: Enable tile download multithreading
         - nthread: Number of thread to allocate
@@ -164,6 +173,7 @@ def get_images(start, finish, save_img=False, img_path="", prefix="himawari8", i
     return [get_image(
             scale=scale,
             level=level,
+            band=band,
             retries=retries,
             multithread=multithread,
             nthread=nthread,
