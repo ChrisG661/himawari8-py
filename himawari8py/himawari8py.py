@@ -110,7 +110,7 @@ def get_image(date=None, scale=550, level=4, retries=10, multithread=True, nthre
 
     date = _parsedate(date, retries)
 
-    path = f"{img_path}{img_name}"
+    path = os.path.join(img_path, img_name)
     imgsize = (scale * level, scale * level)
     image = Image.new("RGB", imgsize)
 
