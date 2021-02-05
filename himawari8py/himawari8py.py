@@ -40,16 +40,17 @@ def latestdate(retries=10):
         except:
             continue
     session.close()
-    raise Exception("Failed to connect to server: Connection timed out.")
+    raise Exception(
+        f"Failed to connect to server: {response.status_code}")
 
 
-def get_tile(x, y, level, date, band = None, retries=10):
+def get_tile(x, y, level, date, band=None, retries=10):
     """
     Parameters
         - x: horizontal position of tile
         - y: vertical position of tile
-        - level: Tile grid size: 1, 2, 4, 8, 16, 20
-        - date: Image date in GMT/UTC
+        - level: Tile grid size: 1, 2, 4, 8, 16, 20. IR: 1, 2, 4, 8, 10
+        - date: Image date in UTC
         - band: Observation band: 1 - 16, default RGB
         - retries: Number of retries on requests 
 
@@ -69,16 +70,17 @@ def get_tile(x, y, level, date, band = None, retries=10):
         except:
             continue
     session.close()
-    raise Exception(f"Failed to connect to server: Response {response.status_code}")
+    raise Exception(
+        f"Failed to connect to server: Response {response.status_code}")
 
 
-def format_url(x, y, level, date, band = None):
+def format_url(x, y, level, date, band=None):
     """
     Parameters
-        - level: Tile grid size: 1, 2, 4, 8, 16, 20
-        - date: Date of tile
         - x: horizontal position of tile
-        - v: vertical position of tile
+        - y: vertical position of tile
+        - level: Tile grid size: 1, 2, 4, 8, 16, 20. IR: 1, 2, 4, 8, 10
+        - date: Image date in UTC
 
     Return:
         URL string of a tile 
@@ -91,13 +93,13 @@ def __get_tile_thread(args):
     return get_tile(*args)
 
 
-def get_image(date=None, scale=550, level=4, band = "RGB", retries=10, multithread=True, nthread=None,
+def get_image(date=None, scale=550, level=4, band="RGB", retries=10, multithread=True, nthread=None,
               save_img=False, img_path="", img_name="himawari.png", show_progress=False):
     """
     Parameters
-        - date: Image date in GMT/UTC
+        - date: Image date in UTC
         - scale: Resolution of each tile in pixel
-        - level: Tile grid size: 1, 2, 4, 8, 16, 20. Max 10 for IR
+        - level: Tile grid size: 1, 2, 4, 8, 16, 20. IR: 1, 2, 4, 8, 10
         - band: Observation band: 1 - 16, default RGB
         - retries: Number of retries on requests
         - multithread: Enable tile download multithreading
@@ -108,7 +110,7 @@ def get_image(date=None, scale=550, level=4, band = "RGB", retries=10, multithre
         - show_progress: Show progress bar
 
     Return:
-        Complete image from Himawari 8
+        Full disk image of Earth from Himawari 8
     """
 
     date = _parsedate(date, retries)
@@ -116,9 +118,9 @@ def get_image(date=None, scale=550, level=4, band = "RGB", retries=10, multithre
     path = os.path.join(img_path, img_name)
     imgsize = (scale * level, scale * level)
     if band == "RGB":
-        mode = "RGB" #Full color
+        mode = "RGB"  # Full color
     elif isinstance(band, int):
-        mode = "LA" #IR
+        mode = "LA"  # IR
     image = Image.new(mode, imgsize)
 
     if multithread:
@@ -151,22 +153,22 @@ def get_images(start, finish, save_img=False, img_path="", prefix="himawari8", i
                show_progress=False, scale=550, level=4, band="RGB", retries=10, multithread=True, nthread=None):
     """
     Parameters
-        - start: Start date in GMT/UTC
-        - finish: End date in GMT/UTC
+        - start: Start date in UTC
+        - finish: End date in UTC
         - save_img: Save image option
         - img_path: Path where the image will be saved
         - prefix: Image name prefix
         - img_name: Name of the image if it is saved
         - show_progress: Show progress bar
         - scale: Resolution of each tile in pixel
-        - level: Tile grid size: 1, 2, 4, 8, 16, 20
+        - level: Tile grid size: 1, 2, 4, 8, 16, 20. IR: 1, 2, 4, 8, 10
         - band: Observation band: 1 - 16, default RGB
         - retries: Number of retries on requests
         - multithread: Enable tile download multithreading
         - nthread: Number of thread to allocate
 
     Return:
-        List of images between start and finish from Himawari 8
+        List of images between start and finish of Earth from Himawari-8
     """
 
     dates = [date for date in daterange(start, finish)]
